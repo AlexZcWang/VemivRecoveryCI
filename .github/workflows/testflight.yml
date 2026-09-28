@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       build_number:
-        description: Required build number.
+        description: Required yyyyMMddHHmm build number.
         required: true
-        default: "1.1"
         type: string
       dry_run:
         description: Build and sign without uploading to App Store Connect.
@@ -113,6 +112,31 @@ jobs:
       - name: Test backend
         working-directory: source/backend
         run: npm test
+
+      - name: Select iOS simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 17 Pro \(/ {print $2; exit}')
+          if [ -z "$DEVICE_ID" ]; then
+            DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 16 Pro \(/ {print $2; exit}')
+          fi
+          test -n "$DEVICE_ID"
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Test iOS app
+        working-directory: source
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            test
 
       - name: Install App Store Connect API key
         run: |
