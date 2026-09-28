@@ -85,6 +85,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :AI_BACKEND_URL ${AI_BACKEND_URL}" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :AI_BACKEND_TOKEN ${AI_BACKEND_TOKEN}" "$PLIST"
 
+      - name: Test AI backend
+        run: |
+          set -euo pipefail
+          curl -fsS "${AI_BACKEND_URL}/healthz" >/dev/null
+          RESPONSE_PATH="$RUNNER_TEMP/ai-preflight.json"
+          STATUS_CODE=$(curl -sS \
+            -o "$RESPONSE_PATH" \
+            -w "%{http_code}" \
+            -X POST "${AI_BACKEND_URL}/v1/readiness-insight" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${AI_BACKEND_TOKEN}" \
+            --data '{
+              "date": "2026-09-28T00:00:00Z",
+              "score": 70,
+              "level": "Ready",
+              "language": "en",
+              "signals": [
+                {"kind": "HRV", "value": "62 ms", "detail": "4% above baseline"},
+                {"kind": "Sleep", "value": "7h 20m", "detail": "0.2h above baseline"}
+              ]
+            }')
+          if [ "$STATUS_CODE" != "200" ]; then
+            cat "$RESPONSE_PATH"
+            exit 1
+          fi
       - name: Test backend
         working-directory: source/backend
         run: npm test
