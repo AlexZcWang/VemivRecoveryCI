@@ -1,0 +1,209 @@
+name: Archive Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Required build number.
+        required: true
+        default: "1.1"
+        type: string
+      dry_run:
+        description: Build and sign without uploading to App Store Connect.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: Release
+
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      PRODUCT_BUNDLE_IDENTIFIER: ${{ secrets.PRODUCT_BUNDLE_IDENTIFIER }}
+      APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+      APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+      APPSTORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APPSTORE_CONNECT_PRIVATE_KEY_BASE64 }}
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      AI_BACKEND_URL: ${{ secrets.AI_BACKEND_URL }}
+      AI_BACKEND_TOKEN: ${{ secrets.AI_BACKEND_TOKEN }}
+      SOURCE_PASSPHRASE: ${{ secrets.SOURCE_PASSPHRASE }}
+      XCODE_PROJECT: ${{ secrets.XCODE_PROJECT }}
+      XCODE_SCHEME: ${{ secrets.XCODE_SCHEME }}
+      INFO_PLIST_RELATIVE_PATH: ${{ secrets.INFO_PLIST_RELATIVE_PATH }}
+
+    steps:
+      - name: Check out encrypted build recipe
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Select newest Xcode
+        run: |
+          set -euo pipefail
+          XCODE_APP=$(find /Applications -maxdepth 1 -name 'Xcode*.app' -print | sort | tail -n 1)
+          test -n "$XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          : "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required}"
+          : "${PRODUCT_BUNDLE_IDENTIFIER:?PRODUCT_BUNDLE_IDENTIFIER is required}"
+          : "${APPSTORE_CONNECT_ISSUER_ID:?APPSTORE_CONNECT_ISSUER_ID is required}"
+          : "${APPSTORE_CONNECT_KEY_ID:?APPSTORE_CONNECT_KEY_ID is required}"
+          : "${APPSTORE_CONNECT_PRIVATE_KEY_BASE64:?APPSTORE_CONNECT_PRIVATE_KEY_BASE64 is required}"
+          : "${BUILD_CERTIFICATE_BASE64:?BUILD_CERTIFICATE_BASE64 is required}"
+          : "${P12_PASSWORD:?P12_PASSWORD is required}"
+          : "${KEYCHAIN_PASSWORD:?KEYCHAIN_PASSWORD is required}"
+          : "${AI_BACKEND_URL:?AI_BACKEND_URL is required}"
+          : "${AI_BACKEND_TOKEN:?AI_BACKEND_TOKEN is required}"
+          : "${SOURCE_PASSPHRASE:?SOURCE_PASSPHRASE is required}"
+          : "${XCODE_PROJECT:?XCODE_PROJECT is required}"
+          : "${XCODE_SCHEME:?XCODE_SCHEME is required}"
+          : "${INFO_PLIST_RELATIVE_PATH:?INFO_PLIST_RELATIVE_PATH is required}"
+
+      - name: Decrypt source
+        run: |
+          set -euo pipefail
+          ENCRYPTED_SOURCE_PATH="$GITHUB_WORKSPACE/source.tar.gz.enc" \
+          DECRYPTED_SOURCE_PATH="$RUNNER_TEMP/source.tar.gz" \
+          node "$GITHUB_WORKSPACE/decrypt-source.mjs"
+          mkdir -p "$GITHUB_WORKSPACE/source"
+          tar -xzf "$RUNNER_TEMP/source.tar.gz" -C "$GITHUB_WORKSPACE/source"
+
+      - name: Configure AI backend
+        run: |
+          set -euo pipefail
+          PLIST="$GITHUB_WORKSPACE/source/$INFO_PLIST_RELATIVE_PATH"
+          /usr/libexec/PlistBuddy -c "Set :AI_BACKEND_URL ${AI_BACKEND_URL}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :AI_BACKEND_TOKEN ${AI_BACKEND_TOKEN}" "$PLIST"
+
+      - name: Test backend
+        working-directory: source/backend
+        run: npm test
+
+      - name: Install App Store Connect API key
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_CONNECT_KEY_ID}.p8"
+          printf '%s' "$APPSTORE_CONNECT_PRIVATE_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Install distribution certificate
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/distribution.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/archive-signing.keychain-db"
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Create Sign in with Apple profile
+        env:
+          APPSTORE_CONNECT_PRIVATE_KEY_PATH: ${{ env.ASC_KEY_PATH }}
+          BUNDLE_IDENTIFIER: ${{ env.PRODUCT_BUNDLE_IDENTIFIER }}
+          BUNDLE_NAME: Archive
+          PROFILE_NAME: CI Distribution ${{ inputs.build_number }}
+          PROFILE_OUTPUT_PATH: ${{ runner.temp }}/Archive.mobileprovision
+        run: |
+          set -euo pipefail
+          PROFILE_RESULT="$RUNNER_TEMP/profile.json"
+          node "$GITHUB_WORKSPACE/source/scripts/ensure-testflight-profile.mjs" > "$PROFILE_RESULT"
+
+          PROFILE_PATH=$(node -e "const value=require(process.argv[1]); process.stdout.write(value.profilePath)" "$PROFILE_RESULT")
+          PROFILE_NAME=$(node -e "const value=require(process.argv[1]); process.stdout.write(value.profileName)" "$PROFILE_RESULT")
+          PROFILE_UUID=$(node -e "const value=require(process.argv[1]); process.stdout.write(value.profileUUID)" "$PROFILE_RESULT")
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_DIR"
+          cp "$PROFILE_PATH" "$PROFILE_DIR/$PROFILE_UUID.mobileprovision"
+
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "Using provisioning profile: $PROFILE_NAME ($PROFILE_UUID)"
+
+      - name: Archive
+        working-directory: source
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Archive.xcarchive" \
+            archive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
+            CURRENT_PROJECT_VERSION="${{ inputs.build_number }}" \
+            MARKETING_VERSION="1.1" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+
+      - name: Export and upload to App Store Connect
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          EXPORT_OPTIONS="$RUNNER_TEMP/ExportOptions.plist"
+          cat > "$EXPORT_OPTIONS" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>testFlightInternalTestingOnly</key>
+            <true/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${PRODUCT_BUNDLE_IDENTIFIER}</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/Archive.xcarchive" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$APPSTORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_CONNECT_ISSUER_ID"
