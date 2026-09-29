@@ -12,7 +12,8 @@ on:
         required: true
         default: 1.1.1
         type: string
-      dry_run:        description: Build and sign without uploading to App Store Connect.
+      dry_run:
+        description: Build and sign without uploading to App Store Connect.
         required: false
         default: false
         type: boolean
