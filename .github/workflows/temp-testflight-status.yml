@@ -1,10 +1,6 @@
 name: Temporary TestFlight status
 on:
   workflow_dispatch:
-    inputs:
-      build_number:
-        required: true
-        type: string
 permissions:
   contents: read
 jobs:
@@ -17,8 +13,7 @@ jobs:
       APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
       APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
       APPSTORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APPSTORE_CONNECT_PRIVATE_KEY_BASE64 }}
-      TESTFLIGHT_BUILD_NUMBER: ${{ inputs.build_number }}
     steps:
       - uses: actions/checkout@v4
-      - name: Query status
-        run: node temp-testflight-status.mjs
+      - name: Query build upload state
+        run: node temp-build-upload-status.mjs
