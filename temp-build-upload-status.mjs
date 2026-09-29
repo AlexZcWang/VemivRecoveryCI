@@ -20,5 +20,6 @@ async function api(path) {
 const apps = await api(`/apps?filter[bundleId]=${encodeURIComponent(bundleId)}&limit=1`);
 const app = apps.data?.[0];
 if (!app) throw new Error("App not found");
-const uploads = await api(`/apps/${app.id}/buildUploads?filter[cfBundleVersion]=12&sort=-uploadedDate&limit=10&fields[buildUploads]=cfBundleShortVersionString,cfBundleVersion,createdDate,state,platform,uploadedDate,build`);
-process.stdout.write(`${JSON.stringify({ app: { id: app.id, name: app.attributes?.name }, uploads: uploads.data }, null, 2)}\n`);
+const uploads = await api(`/apps/${app.id}/buildUploads?sort=-uploadedDate&limit=10&fields[buildUploads]=cfBundleShortVersionString,cfBundleVersion,createdDate,state,platform,uploadedDate,build`);
+const builds = await api(`/builds?filter[app]=${encodeURIComponent(app.id)}&sort=-uploadedDate&limit=10&fields[builds]=version,uploadedDate,processingState,expired`);
+process.stdout.write(`${JSON.stringify({ app: { id: app.id, name: app.attributes?.name }, uploads: uploads.data, builds: builds.data }, null, 2)}\n`);
