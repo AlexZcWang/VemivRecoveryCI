@@ -4,11 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       build_number:
-        description: Required yyyyMMddHHmm build number.
+        description: Required short sequential numeric build number.
         required: true
         type: string
-      dry_run:
-        description: Build and sign without uploading to App Store Connect.
+      marketing_version:
+        description: Marketing version, such as 1.1.1.
+        required: true
+        default: 1.1.1
+        type: string
+      dry_run:        description: Build and sign without uploading to App Store Connect.
         required: false
         default: false
         type: boolean
@@ -207,7 +211,7 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             PRODUCT_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
             CURRENT_PROJECT_VERSION="${{ inputs.build_number }}" \
-            MARKETING_VERSION="1.1" \
+            MARKETING_VERSION="${{ inputs.marketing_version }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
