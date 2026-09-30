@@ -143,41 +143,6 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             test
 
-      - name: Capture simulator screenshots
-        if: ${{ inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          DEVICE_ID="${{ steps.simulator.outputs.device_id }}"
-          APP_PATH="$RUNNER_TEMP/TestDerivedData/Build/Products/Debug-iphonesimulator/VemivRecovery.app"
-          test -d "$APP_PATH"
-
-          xcrun simctl boot "$DEVICE_ID" || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
-          xcrun simctl spawn "$DEVICE_ID" defaults write com.vemiv.app app.onboarding.complete -bool YES
-          xcrun simctl spawn "$DEVICE_ID" defaults write com.vemiv.app app.demo-mode -bool YES
-          xcrun simctl spawn "$DEVICE_ID" defaults write com.vemiv.app app.language -string zh-Hans
-
-          mkdir -p "$RUNNER_TEMP/sleep-qa"
-          for range in 0 1 2 3; do
-            xcrun simctl terminate "$DEVICE_ID" com.vemiv.app || true
-            xcrun simctl launch "$DEVICE_ID" com.vemiv.app \
-              -openMetric sleep \
-              -sleepRange "$range"
-            sleep 3
-            xcrun simctl io "$DEVICE_ID" screenshot \
-              "$RUNNER_TEMP/sleep-qa/sleep-range-$range.png"
-          done
-
-      - name: Upload simulator screenshots
-        if: ${{ inputs.dry_run }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: sleep-visual-qa
-          path: ${{ runner.temp }}/sleep-qa
-          if-no-files-found: error
-          retention-days: 3
-
       - name: Install App Store Connect API key
         run: |
           set -euo pipefail
