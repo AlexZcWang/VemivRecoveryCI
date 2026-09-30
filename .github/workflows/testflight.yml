@@ -161,8 +161,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/activity-ai-qa"
           xcrun simctl terminate "$DEVICE_ID" com.vemiv.app || true
           xcrun simctl launch "$DEVICE_ID" com.vemiv.app \
-            -openActivityDetail \
-            -workoutKind running
+            -openActivityDetail
           sleep 8
           xcrun simctl io "$DEVICE_ID" screenshot \
             "$RUNNER_TEMP/activity-ai-qa/activity-detail.png"
@@ -170,7 +169,6 @@ jobs:
           xcrun simctl terminate "$DEVICE_ID" com.vemiv.app || true
           xcrun simctl launch "$DEVICE_ID" com.vemiv.app \
             -openActivityDetail \
-            -workoutKind running \
             -openAIConversation
           sleep 40
           xcrun simctl io "$DEVICE_ID" screenshot \
