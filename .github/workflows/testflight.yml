@@ -181,6 +181,8 @@ jobs:
           BUNDLE_IDENTIFIER: ${{ env.PRODUCT_BUNDLE_IDENTIFIER }}
           BUNDLE_NAME: Archive
           PROFILE_NAME: CI Distribution ${{ inputs.build_number }}
+          WATCH_PROFILE_NAME: CI Distribution Watch ${{ inputs.build_number }}
+          WATCH_WIDGET_PROFILE_NAME: CI Distribution Watch Widget ${{ inputs.build_number }}
           PROFILE_OUTPUT_PATH: ${{ runner.temp }}/Archive.mobileprovision
         run: |
           set -euo pipefail
