@@ -225,6 +225,32 @@ jobs:
             echo "Using provisioning profile: $ROLE_NAME ($ROLE_UUID) for $ROLE_BUNDLE"
           done
 
+      - name: Inspect signing inputs
+        working-directory: source
+        run: |
+          set -euo pipefail
+          echo "== installed provisioning profiles =="
+          for FILE in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
+            [ -e "$FILE" ] || continue
+            PLIST="$RUNNER_TEMP/inspect.plist"
+            if ! security cms -D -i "$FILE" > "$PLIST" 2>/dev/null; then
+              echo "unreadable: $(basename "$FILE")"
+              continue
+            fi
+            NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$PLIST" 2>/dev/null || echo unknown)
+            APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$PLIST" 2>/dev/null || echo unknown)
+            SUFFIX=$(printf '%s' "$APP_ID" | sed "s/^${PRODUCT_BUNDLE_IDENTIFIER}/<app>/")
+            echo "file=$(basename "$FILE") name=[$NAME] appId=[$SUFFIX]"
+          done
+
+          echo "== resolved target settings =="
+          for TARGET in $(xcodebuild -project "$XCODE_PROJECT" -list -json | /usr/bin/python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['project']['targets']))"); do
+            SETTINGS=$(xcodebuild -project "$XCODE_PROJECT" -target "$TARGET" -configuration Release -showBuildSettings 2>/dev/null || true)
+            BUNDLE=$(printf '%s' "$SETTINGS" | awk -F' = ' '/ PRODUCT_BUNDLE_IDENTIFIER = /{print $2}' | head -n 1)
+            SPEC=$(printf '%s' "$SETTINGS" | awk -F' = ' '/ PROVISIONING_PROFILE_SPECIFIER = /{print $2}' | head -n 1)
+            printf 'target=%s bundle=%s profile=[%s]\n' "$TARGET" "${BUNDLE//$PRODUCT_BUNDLE_IDENTIFIER/<app>}" "$SPEC"
+          done
+
       - name: Archive
         working-directory: source
         run: |
