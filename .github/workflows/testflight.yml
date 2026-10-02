@@ -175,7 +175,7 @@ jobs:
             "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
-      - name: Create Sign in with Apple profile
+      - name: Create provisioning profiles
         env:
           APPSTORE_CONNECT_PRIVATE_KEY_PATH: ${{ env.ASC_KEY_PATH }}
           BUNDLE_IDENTIFIER: ${{ env.PRODUCT_BUNDLE_IDENTIFIER }}
@@ -184,19 +184,44 @@ jobs:
           PROFILE_OUTPUT_PATH: ${{ runner.temp }}/Archive.mobileprovision
         run: |
           set -euo pipefail
-          PROFILE_RESULT="$RUNNER_TEMP/profile.json"
+          PROFILE_RESULT="$RUNNER_TEMP/profiles.json"
           node "$GITHUB_WORKSPACE/source/scripts/ensure-testflight-profile.mjs" > "$PROFILE_RESULT"
 
-          PROFILE_PATH=$(node -e "const value=require(process.argv[1]); process.stdout.write(value.profilePath)" "$PROFILE_RESULT")
-          PROFILE_NAME=$(node -e "const value=require(process.argv[1]); process.stdout.write(value.profileName)" "$PROFILE_RESULT")
-          PROFILE_UUID=$(node -e "const value=require(process.argv[1]); process.stdout.write(value.profileUUID)" "$PROFILE_RESULT")
+          profile_field() {
+            node -e "const value=require(process.argv[1]);const entry=value.profiles.find(item=>item.role===process.argv[2]);process.stdout.write(String(entry[process.argv[3]]))" "$PROFILE_RESULT" "$1" "$2"
+          }
 
           PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PROFILE_DIR"
-          cp "$PROFILE_PATH" "$PROFILE_DIR/$PROFILE_UUID.mobileprovision"
 
-          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
-          echo "Using provisioning profile: $PROFILE_NAME ($PROFILE_UUID)"
+          for ROLE in app watch watchWidget; do
+            ROLE_PATH=$(profile_field "$ROLE" profilePath)
+            ROLE_NAME=$(profile_field "$ROLE" profileName)
+            ROLE_UUID=$(profile_field "$ROLE" profileUUID)
+            ROLE_BUNDLE=$(profile_field "$ROLE" bundleIdentifier)
+            cp "$ROLE_PATH" "$PROFILE_DIR/$ROLE_UUID.mobileprovision"
+
+            case "$ROLE" in
+              app)
+                echo "PROFILE_NAME=$ROLE_NAME" >> "$GITHUB_ENV"
+                echo "APP_BUNDLE_IDENTIFIER=$ROLE_BUNDLE" >> "$GITHUB_ENV"
+                ;;
+              watch)
+                echo "WATCH_PROFILE_NAME=$ROLE_NAME" >> "$GITHUB_ENV"
+                echo "WATCH_BUNDLE_IDENTIFIER=$ROLE_BUNDLE" >> "$GITHUB_ENV"
+                ;;
+              watchWidget)
+                echo "WATCH_WIDGET_PROFILE_NAME=$ROLE_NAME" >> "$GITHUB_ENV"
+                echo "WATCH_WIDGET_BUNDLE_IDENTIFIER=$ROLE_BUNDLE" >> "$GITHUB_ENV"
+                ;;
+              *)
+                echo "::error::Unexpected profile role $ROLE"
+                exit 1
+                ;;
+            esac
+
+            echo "Using provisioning profile: $ROLE_NAME ($ROLE_UUID) for $ROLE_BUNDLE"
+          done
 
       - name: Archive
         working-directory: source
@@ -210,12 +235,16 @@ jobs:
             -archivePath "$RUNNER_TEMP/Archive.xcarchive" \
             archive \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
             CURRENT_PROJECT_VERSION="${{ inputs.build_number }}" \
             MARKETING_VERSION="${{ inputs.marketing_version }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+            SIGNING_APP_BUNDLE_IDENTIFIER="$APP_BUNDLE_IDENTIFIER" \
+            SIGNING_APP_PROFILE_NAME="$PROFILE_NAME" \
+            SIGNING_WATCH_BUNDLE_IDENTIFIER="$WATCH_BUNDLE_IDENTIFIER" \
+            SIGNING_WATCH_PROFILE_NAME="$WATCH_PROFILE_NAME" \
+            SIGNING_WATCH_WIDGET_BUNDLE_IDENTIFIER="$WATCH_WIDGET_BUNDLE_IDENTIFIER" \
+            SIGNING_WATCH_WIDGET_PROFILE_NAME="$WATCH_WIDGET_PROFILE_NAME"
 
       - name: Export and upload to App Store Connect
         if: ${{ inputs.dry_run == false }}
@@ -245,8 +274,12 @@ jobs:
             <true/>
             <key>provisioningProfiles</key>
             <dict>
-              <key>${PRODUCT_BUNDLE_IDENTIFIER}</key>
+              <key>${APP_BUNDLE_IDENTIFIER}</key>
               <string>${PROFILE_NAME}</string>
+              <key>${WATCH_BUNDLE_IDENTIFIER}</key>
+              <string>${WATCH_PROFILE_NAME}</string>
+              <key>${WATCH_WIDGET_BUNDLE_IDENTIFIER}</key>
+              <string>${WATCH_WIDGET_PROFILE_NAME}</string>
             </dict>
           </dict>
           </plist>
