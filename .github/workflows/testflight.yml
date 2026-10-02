@@ -175,34 +175,6 @@ jobs:
             "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
-      - name: Create provisioning profiles
-        env:
-          APPSTORE_CONNECT_PRIVATE_KEY_PATH: ${{ env.ASC_KEY_PATH }}
-          BUNDLE_IDENTIFIER: ${{ env.PRODUCT_BUNDLE_IDENTIFIER }}
-          BUNDLE_NAME: Archive
-          PROFILE_NAME: CI Distribution ${{ inputs.build_number }}
-          PROFILE_OUTPUT_PATH: ${{ runner.temp }}/Archive.mobileprovision
-        run: |
-          set -euo pipefail
-          PROFILE_RESULT="$RUNNER_TEMP/profiles.json"
-          node "$GITHUB_WORKSPACE/source/scripts/ensure-testflight-profile.mjs" > "$PROFILE_RESULT"
-
-          PROFILE_PATH=$(node -e "const value=require(process.argv[1]);process.stdout.write(value.profilePath)" "$PROFILE_RESULT")
-          PROFILE_NAME=$(node -e "const value=require(process.argv[1]);process.stdout.write(value.profileName)" "$PROFILE_RESULT")
-          PROFILE_UUID=$(node -e "const value=require(process.argv[1]);process.stdout.write(value.profileUUID)" "$PROFILE_RESULT")
-          WATCH_BUNDLE_IDENTIFIER=$(node -e "const value=require(process.argv[1]);process.stdout.write(value.bundles.find(item=>item.role==='watch').bundleIdentifier)" "$PROFILE_RESULT")
-          WATCH_WIDGET_BUNDLE_IDENTIFIER=$(node -e "const value=require(process.argv[1]);process.stdout.write(value.bundles.find(item=>item.role==='watchWidget').bundleIdentifier)" "$PROFILE_RESULT")
-
-          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PROFILE_DIR"
-          cp "$PROFILE_PATH" "$PROFILE_DIR/$PROFILE_UUID.mobileprovision"
-
-          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
-          echo "WATCH_BUNDLE_IDENTIFIER=$WATCH_BUNDLE_IDENTIFIER" >> "$GITHUB_ENV"
-          echo "WATCH_WIDGET_BUNDLE_IDENTIFIER=$WATCH_WIDGET_BUNDLE_IDENTIFIER" >> "$GITHUB_ENV"
-          echo "Using provisioning profile: $PROFILE_NAME ($PROFILE_UUID)"
-          echo "Embedded bundles: $WATCH_BUNDLE_IDENTIFIER, $WATCH_WIDGET_BUNDLE_IDENTIFIER"
-
       - name: Archive
         working-directory: source
         run: |
@@ -223,9 +195,8 @@ jobs:
             MARKETING_VERSION="${{ inputs.marketing_version }}" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             SIGNING_APP_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
-            SIGNING_APP_PROFILE_NAME="$PROFILE_NAME" \
-            SIGNING_WATCH_BUNDLE_IDENTIFIER="$WATCH_BUNDLE_IDENTIFIER" \
-            SIGNING_WATCH_WIDGET_BUNDLE_IDENTIFIER="$WATCH_WIDGET_BUNDLE_IDENTIFIER"
+            SIGNING_WATCH_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER.watchkitapp" \
+            SIGNING_WATCH_WIDGET_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER.watchkitapp.widget"
 
       - name: Export and upload to App Store Connect
         if: ${{ inputs.dry_run == false }}
