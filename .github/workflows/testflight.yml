@@ -193,7 +193,6 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CURRENT_PROJECT_VERSION="${{ inputs.build_number }}" \
             MARKETING_VERSION="${{ inputs.marketing_version }}" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             SIGNING_APP_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
             SIGNING_WATCH_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER.watchkitapp" \
             SIGNING_WATCH_WIDGET_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER.watchkitapp.widget"
