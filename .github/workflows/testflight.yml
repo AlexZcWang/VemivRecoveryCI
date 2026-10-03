@@ -73,8 +73,9 @@ jobs:
       SOURCE_COMMIT: ${{ inputs.source_commit }}
       DRY_RUN: ${{ inputs.dry_run }}
       SOURCE_DIR: ${{ github.workspace }}/source
-      DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
-      PUBLIC_SUMMARY_PATH: ${{ runner.temp }}/public-summary.json
+      # The diagnostics location is declared per step: the `runner` context is
+      # not available in a job-level env block, and using it there makes the
+      # whole workflow unparseable (GitHub rejects the dispatch with HTTP 422).
 
     steps:
       - name: Check out encrypted build recipe
@@ -106,6 +107,8 @@ jobs:
           echo "Inputs and secret names validated."
 
       - name: Decrypt source and verify archived commit
+        env:
+          DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
         run: |
           set -euo pipefail
           mkdir -p "$DIAGNOSTICS_DIR"
@@ -131,6 +134,9 @@ jobs:
           } >"$DIAGNOSTICS_DIR/decrypt.log" 2>&1
 
       - name: Run private archive recipe
+        env:
+          DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
+          PUBLIC_SUMMARY_PATH: ${{ runner.temp }}/public-summary.json
         run: |
           set -uo pipefail
           mkdir -p "$DIAGNOSTICS_DIR"
@@ -171,6 +177,7 @@ jobs:
         if: ${{ failure() }}
         env:
           DIAGNOSTICS_PASSPHRASE: ${{ secrets.SOURCE_PASSPHRASE }}
+          DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
         run: |
           set -euo pipefail
           TAR_PATH="$RUNNER_TEMP/diagnostics.tar.gz"
