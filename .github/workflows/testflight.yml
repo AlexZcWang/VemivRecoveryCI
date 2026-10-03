@@ -176,7 +176,7 @@ jobs:
           echo "dry_run=${DRY_RUN}"
 
       - name: Encrypt diagnostics
-        if: ${{ failure() }}
+        if: ${{ always() }}
         env:
           DIAGNOSTICS_PASSPHRASE: ${{ secrets.SOURCE_PASSPHRASE }}
           DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
@@ -192,7 +192,7 @@ jobs:
           echo "Encrypted diagnostics prepared."
 
       - name: Upload encrypted diagnostics
-        if: ${{ failure() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bridge-diagnostics-encrypted
