@@ -146,7 +146,7 @@ jobs:
             echo "The encrypted source does not contain the archive recipe."
             exit 1
           fi
-          bash "$SOURCE_DIR/scripts/run-bridge-testflight.sh" \
+          /bin/bash "$SOURCE_DIR/scripts/run-bridge-testflight.sh" \
             >"$DIAGNOSTICS_DIR/recipe.log" 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
